@@ -33,6 +33,9 @@ namespace OpenCapture.Tests
                     Console.WriteLine("PASS");
                     return 0;
                 }
+                // Measure OCR before desktop/UI fixtures queue accessibility and
+                // live-recognition work; their background load skews its deadline.
+                TestWindowsOcr();
                 RunReviewTests();
                 TestThemeShortcutsAndMenus();
                 TestCrashRecoveryPolicy();
@@ -41,7 +44,6 @@ namespace OpenCapture.Tests
                 TestCaptureFileNames();
                 TestOwnershipSaveCleanup();
                 TestCopiedTextFileNames();
-                TestWindowsOcr();
                 TestVideoFilesAndRecorder();
                 TestRecordingBorderThickness();
                 TestGestureTiming();
@@ -283,6 +285,8 @@ namespace OpenCapture.Tests
 
         private static void RunReviewTests()
         {
+            PerformanceReviewTests.Run();
+            TrayMenuReviewTests.Run();
             StorageReviewTests.Run();
             RecorderReviewTests.Run();
             VisualZoneReviewTests.Run();
@@ -1036,7 +1040,7 @@ namespace OpenCapture.Tests
                 Path.GetTempPath(),
                 "OpenCapture-tray-menu-preview.png");
             using (TrayMenuForm menu = new TrayMenuForm())
-            using (Bitmap preview = new Bitmap(410, 264, PixelFormat.Format32bppArgb))
+            using (Bitmap preview = new Bitmap(menu.Width, menu.Height, PixelFormat.Format32bppArgb))
             {
                 menu.AutostartEnabled = true;
                 menu.CapturesClearable = true;

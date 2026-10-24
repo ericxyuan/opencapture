@@ -19,6 +19,9 @@ namespace OpenCapture
         private ClickAwayWatcher clickWatcher;
         private CaptureCropForm cropEditor;
         private Bitmap thumbnail;
+        private Bitmap backgroundSurface;
+        private Bitmap reviewSurface;
+        private bool backgroundDirty = true;
         private bool editing;
         private bool decided;
         private bool resourcesDisposed;
@@ -101,7 +104,16 @@ namespace OpenCapture
             base.OnMouseMove(args);
             int action = HitAction(args.Location);
             Cursor = action >= 0 ? Cursors.Hand : Cursors.Default;
-            if (action != hoverAction) { hoverAction = action; RefreshSurface(); }
+            if (action != hoverAction) { hoverAction = action; backgroundDirty = true; RefreshSurface(); }
+        }
+
+        protected override void OnMouseLeave(EventArgs args)
+        {
+            base.OnMouseLeave(args);
+            if (hoverAction < 0) return;
+            hoverAction = -1;
+            backgroundDirty = true;
+            RefreshSurface();
         }
 
         protected override void OnMouseDown(MouseEventArgs args)
@@ -158,6 +170,7 @@ namespace OpenCapture
         {
             if (editing || decided || !capture.CanCrop) return;
             editing = true;
+            backgroundDirty = true;
             cropBeforeEditing = capture.Crop;
             countdown.Stop();
             if (clickWatcher != null) { clickWatcher.Dispose(); clickWatcher = null; }
@@ -214,6 +227,7 @@ namespace OpenCapture
 
         private void RefreshThumbnail()
         {
+            backgroundDirty = true;
             if (thumbnail != null) thumbnail.Dispose();
             thumbnail = null;
             if (capture.Image == null) return;
@@ -229,19 +243,53 @@ namespace OpenCapture
         internal Bitmap RenderSurface()
         {
             Bitmap surface = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
-            using (Graphics graphics = Graphics.FromImage(surface)) DrawReview(graphics);
-            return surface;
+            try
+            {
+                using (Graphics graphics = Graphics.FromImage(surface)) DrawReview(graphics);
+                return surface;
+            }
+            catch { surface.Dispose(); throw; }
         }
 
         private void RefreshSurface()
         {
             if (IsDisposed || !IsHandleCreated) return;
-            using (Bitmap surface = RenderSurface()) Present(surface);
+            if (reviewSurface == null || reviewSurface.Size != ClientSize)
+            {
+                if (reviewSurface != null) reviewSurface.Dispose();
+                if (backgroundSurface != null) backgroundSurface.Dispose();
+                reviewSurface = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
+                backgroundSurface = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
+                backgroundDirty = true;
+            }
+            if (backgroundDirty)
+            {
+                using (Graphics graphics = Graphics.FromImage(backgroundSurface))
+                {
+                    graphics.Clear(Color.Transparent);
+                    DrawReviewContent(graphics);
+                }
+                backgroundDirty = false;
+            }
+            using (Graphics graphics = Graphics.FromImage(reviewSurface))
+            {
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.DrawImageUnscaled(backgroundSurface, 0, 0);
+                graphics.CompositingMode = CompositingMode.SourceOver;
+                DrawCountdown(graphics, RemainingFraction);
+            }
+            Present(reviewSurface);
         }
 
         protected override void OnPaint(PaintEventArgs args) { DrawReview(args.Graphics); }
 
         private void DrawReview(Graphics graphics)
+        {
+            DrawReviewContent(graphics);
+            DrawCountdown(graphics, RemainingFraction);
+        }
+
+        private void DrawReviewContent(Graphics graphics)
         {
             FloatingPanelForm.DrawChrome(graphics, panel, OpenCaptureTheme.AccentDeep);
             Rectangle preview = new Rectangle(12, 12, 121, 121);
@@ -268,15 +316,6 @@ namespace OpenCapture
                     graphics.DrawString(OverlayForm.FormatCurrentStorage(recordingBytes), detailFont, text,
                         new RectangleF(148, 65, 90, 20), format);
             }
-            RectangleF ring = new RectangleF(205, 98, 25, 25);
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (Pen track = new Pen(Color.FromArgb(95, OpenCaptureTheme.AccentDeep), 2))
-            using (Pen remaining = new Pen(OpenCaptureTheme.AccentDeep, 2))
-            {
-                graphics.DrawEllipse(track, ring);
-                float sweep = (float)(360.0 * RemainingFraction);
-                if (sweep > 0.01f) graphics.DrawArc(remaining, ring, -90.0f + 360.0f - sweep, sweep);
-            }
             string[] labels = new string[] { "Confirm", editing ? "Done" : "Crop", "Discard" };
             for (int index = 0; index < 3; index++)
             {
@@ -294,6 +333,22 @@ namespace OpenCapture
                     format.LineAlignment = StringAlignment.Center;
                     graphics.DrawString(labels[index], detailFont, text, action, format);
                 }
+            }
+        }
+
+        internal static void DrawCountdown(Graphics graphics, double fraction)
+        {
+            RectangleF ring = new RectangleF(205, 98, 25, 25);
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (Pen track = new Pen(Color.FromArgb(95, OpenCaptureTheme.AccentDeep), 2))
+            using (Pen remaining = new Pen(OpenCaptureTheme.AccentDeep, 2))
+            {
+                graphics.DrawEllipse(track, ring);
+                // GDI+ can reject near-degenerate arcs. Below half a degree the
+                // remaining stroke is subpixel; a complete ring uses an ellipse.
+                float sweep = (float)(360.0 * Math.Max(0, Math.Min(1, fraction)));
+                if (sweep >= 359.5f) graphics.DrawEllipse(remaining, ring);
+                else if (sweep >= 0.5f) graphics.DrawArc(remaining, ring, 270.0f - sweep, sweep);
             }
         }
 
@@ -315,6 +370,8 @@ namespace OpenCapture
                 if (clickWatcher != null) clickWatcher.Dispose();
                 if (cropEditor != null) cropEditor.Dispose();
                 if (thumbnail != null) thumbnail.Dispose();
+                if (backgroundSurface != null) backgroundSurface.Dispose();
+                if (reviewSurface != null) reviewSurface.Dispose();
                 titleFont.Dispose();
                 detailFont.Dispose();
             }

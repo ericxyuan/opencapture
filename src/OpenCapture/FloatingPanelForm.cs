@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -12,6 +13,11 @@ namespace OpenCapture
     internal class FloatingPanelForm : Form
     {
         private readonly bool clickThrough;
+        private IntPtr surfaceDc;
+        private IntPtr surfaceBitmap;
+        private IntPtr surfaceBits;
+        private IntPtr originalBitmap;
+        private Size surfaceSize;
         internal FloatingPanelForm(bool ignoreMouse)
         {
             clickThrough = ignoreMouse;
@@ -54,32 +60,81 @@ namespace OpenCapture
 
         internal void Present(Bitmap surface)
         {
-            IntPtr screen = NativeMethods.GetDC(IntPtr.Zero);
-            IntPtr memory = CreateCompatibleDC(screen);
-            IntPtr bitmap = IntPtr.Zero;
-            IntPtr previous = IntPtr.Zero;
+            if (IsDisposed) return;
+            EnsureSurface(surface.Size);
+            BitmapData pixels = surface.LockBits(new Rectangle(Point.Empty, surface.Size),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
             try
             {
-                bitmap = surface.GetHbitmap(Color.FromArgb(0));
-                previous = SelectObject(memory, bitmap);
-                NativeMethods.POINT location = new NativeMethods.POINT(Location);
-                NativeMethods.POINT source = new NativeMethods.POINT(Point.Empty);
-                NativeSize size = new NativeSize(surface.Width, surface.Height);
-                Blend blend = new Blend();
-                blend.Alpha = 255;
-                blend.Format = 1;
-                if (!UpdateLayeredWindow(Handle, screen, ref location, ref size, memory,
-                    ref source, 0, ref blend, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                int rowBytes = checked(surface.Width * 4);
+                if (pixels.Stride == rowBytes)
+                    CopyMemory(surfaceBits, pixels.Scan0, new UIntPtr(checked((uint)(rowBytes * surface.Height))));
+                else
+                    for (int row = 0; row < surface.Height; row++)
+                        CopyMemory(IntPtr.Add(surfaceBits, row * rowBytes),
+                            IntPtr.Add(pixels.Scan0, row * pixels.Stride), new UIntPtr((uint)rowBytes));
             }
-            finally
-            {
-                if (previous != IntPtr.Zero) SelectObject(memory, previous);
-                if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
-                if (memory != IntPtr.Zero) DeleteDC(memory);
-                if (screen != IntPtr.Zero) NativeMethods.ReleaseDC(IntPtr.Zero, screen);
-            }
+            finally { surface.UnlockBits(pixels); }
+
+            NativeMethods.POINT location = new NativeMethods.POINT(Location);
+            NativeMethods.POINT source = new NativeMethods.POINT(Point.Empty);
+            NativeSize size = new NativeSize(surface.Width, surface.Height);
+            Blend blend = new Blend();
+            blend.Alpha = 255;
+            blend.Format = 1;
+            if (!UpdateLayeredWindow(Handle, IntPtr.Zero, ref location, ref size, surfaceDc,
+                ref source, 0, ref blend, 2)) throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
+        private void EnsureSurface(Size size)
+        {
+            if (surfaceBitmap != IntPtr.Zero && surfaceSize == size) return;
+            ReleaseSurface();
+            try
+            {
+                surfaceDc = CreateCompatibleDC(IntPtr.Zero);
+                if (surfaceDc == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+                BitmapInfo info = new BitmapInfo();
+                info.Size = (uint)Marshal.SizeOf(typeof(BitmapInfo));
+                info.Width = size.Width;
+                info.Height = -size.Height; // Top-down, premultiplied BGRA, like the managed surface.
+                info.Planes = 1;
+                info.BitCount = 32;
+                surfaceBitmap = CreateDIBSection(surfaceDc, ref info, 0, out surfaceBits, IntPtr.Zero, 0);
+                if (surfaceBitmap == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+                originalBitmap = SelectObject(surfaceDc, surfaceBitmap);
+                if (originalBitmap == IntPtr.Zero || originalBitmap == new IntPtr(-1))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                surfaceSize = size;
+            }
+            catch { ReleaseSurface(); throw; }
+        }
+
+        private void ReleaseSurface()
+        {
+            if (surfaceDc != IntPtr.Zero && originalBitmap != IntPtr.Zero && originalBitmap != new IntPtr(-1))
+                SelectObject(surfaceDc, originalBitmap);
+            if (surfaceBitmap != IntPtr.Zero) DeleteObject(surfaceBitmap);
+            if (surfaceDc != IntPtr.Zero) DeleteDC(surfaceDc);
+            surfaceDc = surfaceBitmap = surfaceBits = originalBitmap = IntPtr.Zero;
+            surfaceSize = Size.Empty;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) ReleaseSurface();
+            base.Dispose(disposing);
+        }
+
+        [StructLayout(LayoutKind.Sequential)] private struct BitmapInfo
+        {
+            internal uint Size;
+            internal int Width, Height;
+            internal ushort Planes, BitCount;
+            internal uint Compression, ImageSize;
+            internal int XPixelsPerMeter, YPixelsPerMeter;
+            internal uint ColoursUsed, ColoursImportant;
+        }
         [StructLayout(LayoutKind.Sequential)] private struct NativeSize
         {
             internal int Width, Height;
@@ -87,7 +142,11 @@ namespace OpenCapture
         }
         [StructLayout(LayoutKind.Sequential, Pack = 1)] private struct Blend
         { internal byte Operation, Flags, Alpha, Format; }
-        [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+        [DllImport("gdi32.dll", SetLastError = true)] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+        [DllImport("gdi32.dll", SetLastError = true)] private static extern IntPtr CreateDIBSection(
+            IntPtr dc, ref BitmapInfo info, uint usage, out IntPtr bits, IntPtr section, uint offset);
+        [DllImport("kernel32.dll", EntryPoint = "RtlMoveMemory")] private static extern void CopyMemory(
+            IntPtr destination, IntPtr source, UIntPtr length);
         [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
         [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr item);
         [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr item);

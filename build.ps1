@@ -1,10 +1,12 @@
 param(
     [switch]$DebugBuild,
     [switch]$TestBuild,
+    [switch]$Benchmark,
     [string]$OutputPath
 )
 
 $ErrorActionPreference = 'Stop'
+if ($TestBuild -and $Benchmark) { throw 'Choose either TestBuild or Benchmark.' }
 $workspace = Split-Path -Parent $MyInvocation.MyCommand.Path
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $wpfReferencePath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\WPF'
@@ -13,7 +15,7 @@ $windowsInteropReference = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0
 $windowsRuntimeReference = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll'
 $source = Join-Path $workspace 'src\OpenCapture'
 $output = if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    Join-Path $workspace $(if ($TestBuild) { 'tests\OpenCaptureTests.exe' } else { 'OpenCapture.exe' })
+    Join-Path $workspace $(if ($Benchmark) { 'tests\RenderingBenchmark.exe' } elseif ($TestBuild) { 'tests\OpenCaptureTests.exe' } else { 'OpenCapture.exe' })
 } else {
     [System.IO.Path]::GetFullPath($OutputPath)
 }
@@ -55,7 +57,7 @@ foreach ($requiredReference in @($systemRuntimeReference, $windowsInteropReferen
 
 $arguments = @(
     '/nologo',
-    $(if ($TestBuild) { '/target:exe' } else { '/target:winexe' }),
+    $(if ($TestBuild -or $Benchmark) { '/target:exe' } else { '/target:winexe' }),
     '/platform:x64',
     '/optimize+',
     '/unsafe',
@@ -83,7 +85,10 @@ $arguments = @(
     "/recurse:$(Join-Path $source '*.cs')"
 )
 
-if ($TestBuild) {
+if ($Benchmark) {
+    $arguments += '/main:OpenCapture.Tests.RenderingBenchmark'
+    $arguments += (Join-Path $workspace 'tests\RenderingBenchmark.cs')
+} elseif ($TestBuild) {
     $arguments += '/main:OpenCapture.Tests.TestRunner'
     $arguments += (Join-Path $workspace 'tests\OpenCaptureTests.cs')
     $arguments += @(Get-ChildItem -LiteralPath (Join-Path $workspace 'tests') -Filter '*ReviewTests.cs' |

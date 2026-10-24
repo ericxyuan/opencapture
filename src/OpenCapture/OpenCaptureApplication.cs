@@ -110,7 +110,7 @@ namespace OpenCapture
                 ErrorLog.Write("Could not register the capture shortcut", exception);
                 ShowTrayMessage(
                     shortcuts.CaptureShortcut.DisplayText + " is unavailable",
-                    "Another app is using that shortcut. Open Edit Keybinds from the tray to choose another.",
+                    "Another app is using that shortcut. Open Edit shortcuts from the tray to choose another.",
                     ToolTipIcon.Warning);
             }
 
@@ -126,7 +126,7 @@ namespace OpenCapture
                     ErrorLog.Write("Could not register the recording shortcut", exception);
                     ShowTrayMessage(
                         shortcuts.RecordingShortcut.DisplayText + " is unavailable",
-                        "Another app is using the recording shortcut. Open Edit Keybinds from the tray to choose another.",
+                        "Another app is using the recording shortcut. Open Edit shortcuts from the tray to choose another.",
                         ToolTipIcon.Warning);
                 }
             }
@@ -984,10 +984,9 @@ namespace OpenCapture
 
             EnsureTrayMenu();
             trayMenu.AutostartEnabled = StartupManager.IsEnabled;
-            trayMenu.CapturesClearable = HasClearableCaptures();
-            trayMenu.RecordingsClearable = HasClearableRecordings();
             trayMenu.ClipboardClearable = CaptureEngine.IsOpenCaptureContentOnClipboard();
             trayMenu.ShowAt(Cursor.Position);
+            trayMenu.RefreshMediaState(HasClearableCaptures, HasClearableRecordings);
         }
 
         private void EnsureTrayMenu()
@@ -1199,7 +1198,7 @@ namespace OpenCapture
                     ReleaseRecordingStopHotkey();
                     ShowTrayMessage(
                         shortcuts.RecordingControlShortcut.DisplayText + " is unavailable",
-                        "Close the app currently using that shortcut, then reopen Edit Keybinds.",
+                        "Close the app currently using that shortcut, then reopen Edit shortcuts.",
                         ToolTipIcon.Warning);
                 }
             }

@@ -1368,7 +1368,10 @@ namespace OpenCapture
                 OcrRecognition recognition = OcrRecognition.Empty;
                 try
                 {
-                    recognition = WindowsOcrEngine.RecognizeDetailed(crop);
+                    recognition = WindowsOcrEngine.RecognizeDetailed(crop, delegate
+                    {
+                        return generation == Interlocked.CompareExchange(ref liveOcrGeneration, 0, 0);
+                    });
                 }
                 catch
                 {
@@ -2137,10 +2140,17 @@ namespace OpenCapture
             if (panelSurface == null || panelSurfacePointer != pointerScreen || panelSurfaceTarget != target ||
                 panelSurfaceSensitivity != keyboardSensitivityPercent || panelSurfaceRecording != recordingMode)
             {
-                if (panelSurface != null) panelSurface.Dispose();
-                panelSurface = new Bitmap(panel.Width + 7, panel.Height + 8, PixelFormat.Format32bppPArgb);
+                Size size = new Size(panel.Width + 7, panel.Height + 8);
+                if (panelSurface == null || panelSurface.Size != size)
+                {
+                    if (panelSurface != null) panelSurface.Dispose();
+                    panelSurface = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppPArgb);
+                }
                 using (Graphics graphics = Graphics.FromImage(panelSurface))
+                {
+                    graphics.Clear(Color.Transparent);
                     DrawInformationPanelContent(graphics, target, new Rectangle(Point.Empty, panel.Size));
+                }
                 panelSurfacePointer = pointerScreen;
                 panelSurfaceTarget = target;
                 panelSurfaceSensitivity = keyboardSensitivityPercent;

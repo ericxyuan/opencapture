@@ -94,13 +94,19 @@ namespace OpenCapture
 
         internal static OcrRecognition RecognizeDetailed(Bitmap image)
         {
+            return RecognizeDetailed(image, null);
+        }
+
+        internal static OcrRecognition RecognizeDetailed(Bitmap image, Func<bool> isCurrent)
+        {
             if (image == null)
             {
                 throw new ArgumentNullException("image");
             }
 
+            if (isCurrent != null && !isCurrent()) return OcrRecognition.Empty;
             IList<OcrInputVariant> variants = EncodeOcrVariants(image);
-            return Task.Run(delegate { return RecognizeAsync(variants); })
+            return Task.Run(delegate { return RecognizeAsync(variants, isCurrent); })
                 .GetAwaiter()
                 .GetResult();
         }
@@ -411,8 +417,9 @@ namespace OpenCapture
         }
 
         private static async Task<OcrRecognition> RecognizeAsync(
-            IList<OcrInputVariant> variants)
+            IList<OcrInputVariant> variants, Func<bool> isCurrent)
         {
+            if (isCurrent != null && !isCurrent()) return OcrRecognition.Empty;
             IList<OcrEngine> engines = CreateAllLanguageEngines();
             if (engines.Count == 0)
             {
@@ -424,6 +431,7 @@ namespace OpenCapture
             Exception lastError = null;
             foreach (OcrInputVariant variant in variants)
             {
+                if (isCurrent != null && !isCurrent()) return OcrRecognition.Empty;
                 using (InMemoryRandomAccessStream stream = new InMemoryRandomAccessStream())
                 {
                     using (DataWriter writer = new DataWriter(stream.GetOutputStreamAt(0)))
@@ -445,6 +453,10 @@ namespace OpenCapture
                     {
                         foreach (OcrEngine engine in engines)
                         {
+                            // A closed overlay no longer needs the remaining
+                            // contrast/language passes. Release their resources
+                            // after the current native recognition finishes.
+                            if (isCurrent != null && !isCurrent()) return OcrRecognition.Empty;
                             try
                             {
                                 OcrResult result =
