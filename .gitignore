@@ -1,0 +1,15 @@
+# Personal media and runtime state
+/Captures/
+/Copied Text/
+/Videos/
+/review/
+*.log
+*.pdb
+*.exe
+*.dll
+*.tmp
+
+# Local tooling
+.vs/
+.vscode/
+artifacts/
