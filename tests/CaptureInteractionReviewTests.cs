@@ -135,7 +135,8 @@ namespace OpenCapture.Tests
                 StopPhysicalClickWatcher(form);
                 PumpUntil(delegate { return decisions > 0; }, 3500);
                 Require(decisions == 1 && elapsed.ElapsedMilliseconds >= 1950 && elapsed.ElapsedMilliseconds < 3300,
-                    "review dismisses once after two seconds");
+                    "review dismisses once after two seconds (decisions=" + decisions +
+                    ", elapsed=" + elapsed.ElapsedMilliseconds + " ms, mouse=" + Control.MouseButtons + ")");
             }
             using (PendingCapture pending = new PendingCapture(CaptureKind.Screenshot, CreateTestImage(), null, DateTime.Now, null))
             using (CaptureReviewForm review = new CaptureReviewForm(pending))

@@ -4,7 +4,7 @@ OpenCapture is a lightweight Windows screenshot tool that lives in the notificat
 
 GitHub repository: [ericxyuan/opencapture](https://github.com/ericxyuan/opencapture). Maintainer: [ericxyuan](https://github.com/ericxyuan).
 
-Version 1.19.0 refines the tray menu and reduces work in the floating capture and review panels. The app remains a standalone executable with no added runtime dependencies.
+Version 1.19.1 refines the tray menu and reduces work in the floating capture and review panels. It also fixes stale row backgrounds during repeated menu repaints, preventing overlapping labels and black corner fragments. The app remains a standalone executable with no added runtime dependencies.
 
 ![OpenCapture tray menu](docs/tray-menu.png)
 

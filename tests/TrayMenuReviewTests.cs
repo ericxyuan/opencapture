@@ -33,6 +33,7 @@ namespace OpenCapture.Tests
                 Button recordings = (Button)menu.Controls[3];
                 Button clipboard = (Button)menu.Controls[4];
                 Button quit = (Button)menu.Controls[5];
+                TestReusedPaintBuffer(shortcuts, autostart, captures, recordings, clipboard, quit);
                 Require(shortcuts.Focused && autostart.AccessibleName.EndsWith("On"),
                     "menu opens with keyboard focus and an explicit startup state");
                 try
@@ -59,6 +60,20 @@ namespace OpenCapture.Tests
                     PumpUntil(delegate { return captures.Enabled; }, 2000);
                     Require(captures.Enabled && !recordings.Enabled && !clipboard.Enabled && scans == 1,
                         "one coalesced refresh independently updates screenshot and recording availability");
+                    // Inspect the real WM_PAINT path as well as DrawToBitmap:
+                    // repeated row invalidation exposed the stale native buffer.
+                    menu.ShowAt(new Point(work.Right, work.Bottom));
+                    for (int repaint = 0; repaint < 12; repaint++)
+                        foreach (Control item in menu.Controls) { item.Invalidate(); item.Update(); }
+                    menu.Update();
+                    using (Bitmap live = new Bitmap(menu.Width, menu.Height, PixelFormat.Format32bppArgb))
+                    using (Graphics graphics = Graphics.FromImage(live))
+                    {
+                        graphics.CopyFromScreen(menu.Location, Point.Empty, menu.Size);
+                        string livePath = Path.Combine(Path.GetTempPath(), "OpenCapture-tray-menu-live.png");
+                        live.Save(livePath, ImageFormat.Png);
+                        Console.WriteLine("LIVE_TRAY_PREVIEW=" + livePath);
+                    }
                     using (Bitmap preview = new Bitmap(menu.Width, menu.Height, PixelFormat.Format32bppArgb))
                     {
                         menu.DrawToBitmap(preview, menu.ClientRectangle);
@@ -92,6 +107,31 @@ namespace OpenCapture.Tests
             }
             Console.WriteLine("TRAY_MENU_REVIEW_PASS");
         }
+        private static void TestReusedPaintBuffer(params Button[] items)
+        {
+            // Native double buffering can reuse a bitmap that held another row.
+            // Each owner-painted row must produce the same pixels regardless of
+            // the buffer's old contents, including its rounded outer corners.
+            MethodInfo paint = items[0].GetType().GetMethod("OnPaint", BindingFlags.Instance | BindingFlags.NonPublic);
+            using (Bitmap reused = new Bitmap(items[0].Width, items[0].Height, PixelFormat.Format32bppArgb))
+            using (Graphics reusedGraphics = Graphics.FromImage(reused))
+            {
+                reusedGraphics.Clear(Color.Magenta);
+                foreach (Button item in items)
+                using (Bitmap clean = new Bitmap(item.Width, item.Height, PixelFormat.Format32bppArgb))
+                using (Graphics cleanGraphics = Graphics.FromImage(clean))
+                {
+                    cleanGraphics.Clear(item.Parent.BackColor);
+                    paint.Invoke(item, new object[] { new PaintEventArgs(cleanGraphics, item.ClientRectangle) });
+                    paint.Invoke(item, new object[] { new PaintEventArgs(reusedGraphics, item.ClientRectangle) });
+                    for (int y = 0; y < item.Height; y++)
+                        for (int x = 0; x < item.Width; x++)
+                            Require(clean.GetPixel(x, y) == reused.GetPixel(x, y),
+                                "menu row repaint must erase previous buffer contents: " + item.Text + " at " + x + "," + y);
+                }
+            }
+        }
+
         private static void SendKey(TrayMenuForm menu, Keys key)
         { typeof(TrayMenuForm).GetMethod("ProcessCmdKey", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(menu, new object[] { new Message(), key }); }
         private static void PumpUntil(Func<bool> done, int timeout)

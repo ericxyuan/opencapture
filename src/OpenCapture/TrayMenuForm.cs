@@ -224,7 +224,8 @@ namespace OpenCapture
             {
                 FlatStyle = FlatStyle.Flat;
                 FlatAppearance.BorderSize = 0;
-                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
             }
             protected override void OnMouseEnter(EventArgs args) { base.OnMouseEnter(args); hovered = true; Invalidate(); }
             protected override void OnMouseLeave(EventArgs args) { base.OnMouseLeave(args); hovered = pressed = false; Invalidate(); }
@@ -234,6 +235,12 @@ namespace OpenCapture
             protected override void OnLostFocus(EventArgs args) { base.OnLostFocus(args); Invalidate(); }
             protected override void OnPaint(PaintEventArgs args)
             {
+                // ButtonBase's flat adapter normally fills the background inside
+                // its own OnPaint. This override owns the complete row instead,
+                // so erase every pixel before drawing into a reused buffer.
+                args.Graphics.SmoothingMode = SmoothingMode.None;
+                using (SolidBrush background = new SolidBrush(Parent == null ? BackColor : Parent.BackColor))
+                    args.Graphics.FillRectangle(background, ClientRectangle);
                 bool active = Enabled && (hovered || Focused);
                 bool contrast = SystemInformation.HighContrast;
                 Color ink = !Enabled ? (contrast ? SystemColors.GrayText : Color.FromArgb(137, 148, 161)) :
@@ -252,11 +259,13 @@ namespace OpenCapture
                 text.Inflate(-ContentInset, 0);
                 if (!string.IsNullOrEmpty(Detail)) text.Width -= ContentInset * 3;
                 TextRenderer.DrawText(args.Graphics, Text, Font, text, ink,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine |
+                    TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform);
                 if (!string.IsNullOrEmpty(Detail))
                     TextRenderer.DrawText(args.Graphics, Detail, Font,
                         new Rectangle(Width - ContentInset * 4, 0, ContentInset * 3, Height), ink,
-                        TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+                        TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine |
+                        TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform);
                 if (Focused && ShowFocusCues)
                 {
                     Rectangle focus = ClientRectangle; focus.Inflate(-3, -3);
