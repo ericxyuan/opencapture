@@ -1,5 +1,5 @@
-use crate::capture::CapturedFrame;
-use crate::mjpeg_avi::MjpegAviWriter;
+use crate::capture::{CapturedFrame, Rect};
+use crate::mjpeg_avi::{MjpegAviReader, MjpegAviWriter};
 use jpeg_encoder::{ColorType, Encoder};
 use std::io;
 use std::path::Path;
@@ -52,6 +52,60 @@ impl RecordingWriter {
     pub fn finish(self) -> io::Result<()> {
         self.avi.finish()
     }
+}
+
+/// Crops one frame at a time and writes a new recording without replacing a file.
+pub fn crop_video(
+    source: impl AsRef<Path>,
+    destination: impl AsRef<Path>,
+    crop: Rect,
+) -> io::Result<()> {
+    let mut input = MjpegAviReader::open(source)?;
+    let left = i64::from(crop.x).max(0);
+    let top = i64::from(crop.y).max(0);
+    let right = (i64::from(crop.x) + i64::from(crop.width)).min(i64::from(input.width));
+    let bottom = (i64::from(crop.y) + i64::from(crop.height)).min(i64::from(input.height));
+    if crop.width <= 0 || crop.height <= 0 || right <= left || bottom <= top {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "video crop does not intersect the recording",
+        ));
+    }
+    let width = u16::try_from(right - left).map_err(io::Error::other)?;
+    let height = u16::try_from(bottom - top).map_err(io::Error::other)?;
+    let mut output = RecordingWriter::create(destination, width, height, input.frames_per_second)?;
+    while let Some(jpeg) = input.read_frame()? {
+        use image::ImageDecoder;
+        let mut decoder = image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(&jpeg))
+            .map_err(io::Error::other)?;
+        if decoder.dimensions() != (input.width, input.height) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "recording frame dimensions do not match its header",
+            ));
+        }
+        decoder
+            .set_limits(image::Limits::default())
+            .map_err(io::Error::other)?;
+        let image = image::DynamicImage::from_decoder(decoder).map_err(io::Error::other)?;
+        let mut pixels = image
+            .crop_imm(left as u32, top as u32, width as u32, height as u32)
+            .into_rgba8()
+            .into_raw();
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        output.write_frame(&CapturedFrame::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: i32::from(width),
+                height: i32::from(height),
+            },
+            pixels,
+        )?)?;
+    }
+    output.finish()
 }
 
 /// Worker for the GDI recording path. The caller owns the output file and must

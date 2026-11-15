@@ -16,6 +16,9 @@ pub struct Review {
 }
 
 impl Review {
+    pub fn decision(&self) -> Option<Decision> {
+        self.decision
+    }
     pub fn new(now: Duration) -> Self {
         Self {
             started: now,

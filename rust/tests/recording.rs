@@ -1,6 +1,6 @@
 use opencapture_core::capture::{CapturedFrame, Rect};
 use opencapture_core::mjpeg_avi::MjpegAviReader;
-use opencapture_core::recording::RecordingWriter;
+use opencapture_core::recording::{crop_video, RecordingWriter};
 
 #[test]
 fn writes_encoded_frames_and_rejects_a_changed_size() {
@@ -54,6 +54,68 @@ fn writes_encoded_frames_and_rejects_a_changed_size() {
     assert!(reader.read_frame().unwrap().is_none());
     drop(reader);
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn crops_a_recording_without_overwriting_existing_files() {
+    let path = std::env::temp_dir().join(format!(
+        "opencapture-rust-crop-source-{}.avi",
+        std::process::id()
+    ));
+    let dest = std::env::temp_dir().join(format!(
+        "opencapture-rust-crop-output-{}.avi",
+        std::process::id()
+    ));
+    let frame = CapturedFrame::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 16,
+            height: 12,
+        },
+        [10, 100, 220, 255].repeat(16 * 12),
+    )
+    .unwrap();
+    let mut source = RecordingWriter::create(&path, 16, 12, 60).unwrap();
+    source.write_frame(&frame).unwrap();
+    source.write_frame(&frame).unwrap();
+    source.finish().unwrap();
+    let crop = Rect {
+        x: -2,
+        y: 2,
+        width: 8,
+        height: 8,
+    };
+    crop_video(&path, &dest, crop).unwrap();
+    let mut reader = MjpegAviReader::open(&dest).unwrap();
+    assert_eq!(
+        (
+            reader.width,
+            reader.height,
+            reader.frame_count,
+            reader.frames_per_second
+        ),
+        (6, 8, 2, 60)
+    );
+    let jpeg = reader.read_frame().unwrap().unwrap();
+    let decoded = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg)
+        .unwrap()
+        .to_rgb8();
+    let pixel = decoded.get_pixel(2, 2).0;
+    assert!(
+        (i32::from(pixel[0]) - 220).abs() < 15
+            && (i32::from(pixel[1]) - 100).abs() < 15
+            && (i32::from(pixel[2]) - 10).abs() < 15,
+        "{pixel:?}"
+    );
+    assert!(reader.read_frame().unwrap().is_some());
+    assert!(reader.read_frame().unwrap().is_none());
+    drop(reader);
+    let before = std::fs::read(&dest).unwrap();
+    assert!(crop_video(&path, &dest, crop).is_err());
+    assert_eq!(std::fs::read(&dest).unwrap(), before);
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(dest).unwrap();
 }
 
 #[cfg(windows)]
