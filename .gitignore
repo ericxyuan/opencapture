@@ -13,3 +13,4 @@
 .vs/
 .vscode/
 artifacts/
+/rust/target/
