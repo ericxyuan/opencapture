@@ -1,0 +1,48 @@
+name: Publish OpenCapture desktop downloads
+on:
+  push:
+    branches: [release/desktop-2026-11]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and check the release
+        shell: powershell
+        run: |
+          .\build.ps1 -SystemFont
+          if ((Get-Item OpenCapture.exe).VersionInfo.FileVersion -ne '1.19.1.0') { throw 'Unexpected Windows version' }
+          .\test.ps1 -OwnershipOnly
+          Compress-Archive -Path OpenCapture.exe -DestinationPath OpenCapture-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: OpenCapture-Windows-x64.zip
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash macOS/package.sh "$RUNNER_TEMP/OpenCapture-macOS-Universal.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: ${{ runner.temp }}/OpenCapture-macOS-Universal.zip
+  release:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish both verified archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd packages
+          sha256sum *.zip > SHA256SUMS.txt
+          gh release create desktop-2026-11 *.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OpenCapture for Windows and Mac" --notes "Windows 1.19.1 for x64. Mac 1.1.0 universal preview for macOS 15 or later, ad-hoc signed and unnotarized. Both archives contain native desktop applications."

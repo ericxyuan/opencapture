@@ -1,5 +1,6 @@
 param(
     [switch]$DebugBuild,
+    [switch]$SystemFont,
     [switch]$TestBuild,
     [switch]$Benchmark,
     [string]$OutputPath
@@ -27,7 +28,9 @@ if (-not (Test-Path -LiteralPath $compiler)) {
     throw 'The .NET Framework 4.x C# compiler was not found on this Windows installation.'
 }
 
-foreach ($requiredResource in @($fontResource, $startupImageResource, $trayIconResource)) {
+$resources = @($startupImageResource, $trayIconResource)
+if (-not $SystemFont) { $resources += $fontResource }
+foreach ($requiredResource in $resources) {
     if (-not (Test-Path -LiteralPath $requiredResource)) {
         throw "Required embedded resource was not found: $requiredResource"
     }
@@ -79,11 +82,12 @@ $arguments = @(
     "/reference:$(Join-Path $wpfReferencePath 'UIAutomationClient.dll')",
     "/reference:$(Join-Path $wpfReferencePath 'UIAutomationTypes.dll')",
     "/reference:$(Join-Path $wpfReferencePath 'WindowsBase.dll')",
-    "/resource:$fontResource,OpenCapture.Resources.ProximaNovaA.otf",
     "/resource:$startupImageResource,OpenCapture.Resources.StartupWindow.png",
     "/resource:$trayIconResource,OpenCapture.Resources.TrayIcon.png",
     "/recurse:$(Join-Path $source '*.cs')"
 )
+
+if (-not $SystemFont) { $arguments += "/resource:$fontResource,OpenCapture.Resources.ProximaNovaA.otf" }
 
 if ($Benchmark) {
     $arguments += '/main:OpenCapture.Tests.RenderingBenchmark'

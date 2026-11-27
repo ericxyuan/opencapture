@@ -1,6 +1,12 @@
 # OpenCapture
 
-OpenCapture is a lightweight Windows screenshot tool that lives in the notification area.
+OpenCapture is a native capture tool for Windows and macOS. On Windows it lives in the notification area. On macOS it runs in the menu bar.
+
+## Mac 1.1.0
+
+The universal preview supports Apple silicon and Intel on macOS 15 or later. Move OpenCapture.app to Applications and grant Screen & System Audio Recording when prompted. Press Option-Q to capture, then confirm or discard the screenshot during its two-second review. The menu bar also offers local text recognition, tone-marked Mandarin pinyin, HEX sampling and silent H.264 recording. Out of the box, media goes into Pictures/OpenCapture. This preview is ad-hoc signed and has no Apple notarization ticket.
+
+## Windows 1.19.1
 
 GitHub repository: [ericxyuan/opencapture](https://github.com/ericxyuan/opencapture). Maintainer: [ericxyuan](https://github.com/ericxyuan).
 
